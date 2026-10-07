@@ -1,0 +1,91 @@
+# PROD environment on ROSA
+#   - namespace m2its-prod, 2+ replicas, autoscaling, disruption budgets
+#   - Amazon RDS for MySQL (no in-cluster database), TLS required
+#   - immutable image tags built and pushed by CI (never ":latest")
+#   - Secrets are NOT generated here: create them out-of-band (oc create secret, or
+#     External Secrets Operator + AWS Secrets Manager). See docs/05-rosa-aws.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: m2its-prod
+
+resources:
+  - ../../base
+  - autoscaling.yaml
+
+components:
+  - ../../components/monitoring
+
+# CI updates newTag with: kustomize edit set image identity-service=quay.io/your-org/identity-service:<git-sha>
+images:
+  - name: identity-service
+    newName: quay.io/your-org/identity-service
+    newTag: 1.0.0
+  - name: academic-service
+    newName: quay.io/your-org/academic-service
+    newTag: 1.0.0
+  - name: question-service
+    newName: quay.io/your-org/question-service
+    newTag: 1.0.0
+  - name: exam-service
+    newName: quay.io/your-org/exam-service
+    newTag: 1.0.0
+  - name: api-gateway
+    newName: quay.io/your-org/api-gateway
+    newTag: 1.0.0
+
+replicas:
+  - name: identity-service
+    count: 2
+  - name: academic-service
+    count: 2
+  - name: question-service
+    count: 2
+  - name: exam-service
+    count: 2
+  - name: api-gateway
+    count: 2
+
+patches:
+  - target: { kind: ConfigMap, name: m2its-config }
+    patch: |-
+      - op: replace
+        path: /data/DB_HOST
+        value: m2its-mysql.REPLACE-ME.us-east-1.rds.amazonaws.com
+      - op: replace
+        path: /data/DB_PARAMS
+        value: sslMode=REQUIRED
+      - op: replace
+        path: /data/CORS_ALLOWED_ORIGINS
+        value: https://exam.your-domain.com
+      - op: add
+        path: /data/FLYWAY_LOCATIONS
+        value: classpath:db/migration
+      - op: add
+        path: /data/API_DOCS_ENABLED
+        value: "false"
+      - op: add
+        path: /data/LOGGING_STRUCTURED_FORMAT_CONSOLE
+        value: ecs
+  # Spread replicas over nodes / availability zones so one failure never takes out a service
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/part-of=m2its
+    patch: |-
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/part-of: m2its
+            matchLabelKeys: ["app.kubernetes.io/name"]
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/part-of: m2its
+            matchLabelKeys: ["app.kubernetes.io/name"]

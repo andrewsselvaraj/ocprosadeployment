@@ -1,0 +1,7 @@
+# Optional building block: Prometheus scraping through OpenShift user workload monitoring
+# (enabled by default on ROSA).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - service-monitor.yaml

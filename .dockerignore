@@ -1,0 +1,10 @@
+# Keep the build context small and free of secrets / legacy data
+.git
+**/target
+.idea
+.vscode
+*.iml
+*.sql
+deploy/**/secrets/*.env
+docs
+scripts

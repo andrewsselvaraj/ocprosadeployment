@@ -1,0 +1,95 @@
+# DEV environment on ROSA / OpenShift
+#   - namespace m2its-dev, 1 replica each
+#   - in-cluster MySQL (components/mysql) with demo seed data
+#   - images built inside the cluster by OpenShift BuildConfigs (deploy/openshift/builds.yaml)
+#     and redeployed automatically after every build (image triggers below)
+#
+#   1) .\scripts\new-dev-secrets.ps1          (creates secrets/*.env with random values)
+#   2) oc apply -k deploy/k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: m2its-dev
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/mysql
+  - ../../components/monitoring
+
+# Secrets come from local, git-ignored files (templates: secrets/*.env.example)
+secretGenerator:
+  - name: m2its-jwt
+    envs: [secrets/jwt.env]
+  - name: identity-db
+    envs: [secrets/identity-db.env]
+  - name: academic-db
+    envs: [secrets/academic-db.env]
+  - name: question-db
+    envs: [secrets/question-db.env]
+  - name: exam-db
+    envs: [secrets/exam-db.env]
+  - name: mysql-admin
+    envs: [secrets/mysql-admin.env]
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Images live in the cluster's internal registry, pushed there by the BuildConfigs
+images:
+  - name: identity-service
+    newName: image-registry.openshift-image-registry.svc:5000/m2its-dev/identity-service
+    newTag: latest
+  - name: academic-service
+    newName: image-registry.openshift-image-registry.svc:5000/m2its-dev/academic-service
+    newTag: latest
+  - name: question-service
+    newName: image-registry.openshift-image-registry.svc:5000/m2its-dev/question-service
+    newTag: latest
+  - name: exam-service
+    newName: image-registry.openshift-image-registry.svc:5000/m2its-dev/exam-service
+    newTag: latest
+  - name: api-gateway
+    newName: image-registry.openshift-image-registry.svc:5000/m2its-dev/api-gateway
+    newTag: latest
+
+patches:
+  # Dev uses moving ":latest" tags, so always pull
+  - target:
+      kind: Deployment
+      labelSelector: app.kubernetes.io/part-of=m2its
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+  # OpenShift image triggers: roll out a deployment as soon as its ImageStream gets a new image
+  - target: { kind: Deployment, name: identity-service }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"identity-service:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
+  - target: { kind: Deployment, name: academic-service }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"academic-service:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
+  - target: { kind: Deployment, name: question-service }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"question-service:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
+  - target: { kind: Deployment, name: exam-service }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"exam-service:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'
+  - target: { kind: Deployment, name: api-gateway }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"api-gateway:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]'

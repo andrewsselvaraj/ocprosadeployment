@@ -1,0 +1,13 @@
+# Environment-independent manifests. Never applied directly: use an overlay
+#   oc apply -k deploy/k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - app-config.yaml
+  - identity-service.yaml
+  - academic-service.yaml
+  - question-service.yaml
+  - exam-service.yaml
+  - api-gateway.yaml
+  - network-policies.yaml

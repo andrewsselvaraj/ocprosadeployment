@@ -1,0 +1,105 @@
+# CI/CD pipeline
+#   every push / PR : build + unit/integration tests (H2, no external services needed)
+#   push to main    : build images with Jib (no Docker daemon) and push them, tagged with the commit SHA
+#                     then deploy to the ROSA "m2its-prod" namespace after a manual approval
+#
+# Repository settings needed (Settings -> Secrets and variables -> Actions):
+#   variables: IMAGE_REGISTRY   e.g. quay.io/your-org
+#              OPENSHIFT_SERVER e.g. https://api.m2its.abcd.p3.openshiftapps.com:443
+#   secrets:   REGISTRY_USERNAME, REGISTRY_PASSWORD   (Quay robot account or ECR credentials)
+#              OPENSHIFT_TOKEN  (token of a "deployer" ServiceAccount with edit rights on m2its-prod)
+# and an environment called "production" with required reviewers (manual approval gate).
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and test
+        run: ./mvnw -B verify
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: "**/target/surefire-reports/"
+
+  images:
+    needs: build-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [identity-service, academic-service, question-service, exam-service, api-gateway]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build and push image with Jib
+        env:
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: >
+          ./mvnw -B -Pjib -pl ${{ matrix.service }} -am package -DskipTests
+          -Dimage.registry=${{ vars.IMAGE_REGISTRY }}
+          -Dimage.tag=${{ github.sha }}
+          -Djib.to.auth.username="$REGISTRY_USERNAME"
+          -Djib.to.auth.password="$REGISTRY_PASSWORD"
+
+  deploy-prod:
+    needs: images
+    runs-on: ubuntu-latest
+    environment: production          # waits for manual approval
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install oc
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          oc: "4"
+      - name: Log in to ROSA
+        uses: redhat-actions/oc-login@v1
+        with:
+          openshift_server_url: ${{ vars.OPENSHIFT_SERVER }}
+          openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+          namespace: m2its-prod
+      - name: Pin image tags to this commit
+        working-directory: deploy/k8s/overlays/prod
+        env:
+          REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+          TAG: ${{ github.sha }}
+        run: |
+          for s in identity-service academic-service question-service exam-service api-gateway; do
+            S=$s yq -i '(.images[] | select(.name == strenv(S))) |= (.newName = strenv(REGISTRY) + "/" + strenv(S) | .newTag = strenv(TAG))' kustomization.yaml
+          done
+          cat kustomization.yaml
+      - name: Apply manifests and wait for rollout
+        run: |
+          oc apply -k deploy/k8s/overlays/prod
+          for d in identity-service academic-service question-service exam-service api-gateway; do
+            oc rollout status deployment/$d -n m2its-prod --timeout=300s
+          done
+      - name: Health check through the public route
+        run: |
+          host=$(oc get route api-gateway -n m2its-prod -o jsonpath='{.spec.host}')
+          curl -fsS "https://$host/actuator/health/readiness"

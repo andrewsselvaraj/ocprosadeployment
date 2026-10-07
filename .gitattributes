@@ -1,0 +1,7 @@
+# Shell scripts must keep LF line endings even when checked out on Windows,
+# otherwise they fail inside Linux containers ("/bin/sh^M: bad interpreter").
+* text=auto
+mvnw text eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

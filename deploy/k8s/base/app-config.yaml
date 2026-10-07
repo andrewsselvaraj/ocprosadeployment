@@ -1,0 +1,24 @@
+# Non-secret settings shared by all services (loaded with envFrom). Environment overlays
+# replace individual keys; secrets (passwords, JWT key) live in Secrets, never here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: m2its-config
+  labels:
+    app.kubernetes.io/part-of: m2its
+data:
+  # Database server (in-cluster MySQL in dev, Amazon RDS in prod)
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_PARAMS: sslMode=PREFERRED&allowPublicKeyRetrieval=true
+  # Service discovery = Kubernetes Service DNS names
+  IDENTITY_SERVICE_URL: http://identity-service:8080
+  ACADEMIC_SERVICE_URL: http://academic-service:8080
+  QUESTION_SERVICE_URL: http://question-service:8080
+  EXAM_SERVICE_URL: http://exam-service:8080
+  # Security
+  JWT_ISSUER: m2its-identity
+  JWT_TTL: PT1H
+  CORS_ALLOWED_ORIGINS: http://localhost:3000
+  # JVM: heap = 60% of the container memory limit, the rest is metaspace, threads, buffers
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError

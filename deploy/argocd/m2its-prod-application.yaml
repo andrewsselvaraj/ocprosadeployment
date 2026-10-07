@@ -1,0 +1,31 @@
+# GitOps alternative to the "deploy-prod" job in .github/workflows/ci-cd.yml.
+# Install the "Red Hat OpenShift GitOps" operator, then:
+#   oc apply -f deploy/argocd/m2its-prod-application.yaml
+# Argo CD keeps namespace m2its-prod identical to deploy/k8s/overlays/prod on the main branch:
+# a release = a commit that changes the image tags in that kustomization.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: m2its-prod
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/ocprosadeployment.git
+    targetRevision: main
+    path: deploy/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: m2its-prod
+  syncPolicy:
+    automated:
+      prune: true        # delete resources removed from git
+      selfHeal: true     # undo manual changes made with oc/console
+    syncOptions:
+      - CreateNamespace=true
+  # The HPAs own the replica count; do not fight them
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

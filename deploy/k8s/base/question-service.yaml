@@ -1,0 +1,96 @@
+# question-service: Deployment (how to run the pods) + Service (stable in-cluster DNS name).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: question-service
+  labels:
+    app.kubernetes.io/name: question-service
+    app.kubernetes.io/part-of: m2its
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: question-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0          # zero-downtime: a new pod must be Ready before an old one stops
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: question-service
+        app.kubernetes.io/part-of: m2its
+        app.kubernetes.io/component: backend
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: question-service          # replaced per environment by the overlay "images:" list
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: m2its-config
+          env:
+            # $(VAR) expands variables defined above (incl. the ConfigMap ones)
+            - name: DB_URL
+              value: jdbc:mysql://$(DB_HOST):$(DB_PORT)/question_db?$(DB_PARAMS)
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef: { name: question-db, key: DB_USERNAME }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: question-db, key: DB_PASSWORD }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: m2its-jwt, key: JWT_SECRET }
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 768Mi            # no CPU limit on purpose: avoids throttling the JVM at startup
+          # startupProbe gives Spring Boot up to 150 s to start before liveness kicks in
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:              # includes the DB check: no traffic while MySQL is unreachable
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:                   # let the router/endpoints drop this pod before shutdown starts
+              exec:
+                command: ["sleep", "5"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: question-service
+  labels:
+    app.kubernetes.io/name: question-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  selector:
+    app.kubernetes.io/name: question-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

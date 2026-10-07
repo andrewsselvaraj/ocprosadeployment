@@ -1,0 +1,20 @@
+# Build output
+target/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Legacy database dump: contains real e-mail addresses and plain-text passwords.
+# Never commit it; load it straight into the database (see docs/08-legacy-data-migration.md).
+m2itssql_complete.sql
+*.sql.gz
+
+# Real secrets (only the *.env.example templates are committed)
+deploy/**/secrets/*.env
+!deploy/**/secrets/*.env.example

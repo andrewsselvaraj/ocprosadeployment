@@ -1,0 +1,62 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: api-gateway
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Locally the services run on 8081-8084; in the cluster these are Kubernetes Service
+          # DNS names, e.g. http://identity-service:8080 (set by the ConfigMap).
+          routes:
+            - id: identity-service
+              uri: ${IDENTITY_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/auth/**,/api/orgs/**,/api/users/**,/api/contact/**
+            - id: academic-service
+              uri: ${ACADEMIC_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/classes/**,/api/subjects/**,/api/chapters/**
+            - id: question-service
+              uri: ${QUESTION_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/questions/**
+            - id: exam-service
+              uri: ${EXAM_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/exams/**
+            # Note: there is intentionally NO route for /internal/** (service-to-service only).
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 15s
+          globalcors:
+            cors-configurations:
+              '[/api/**]':
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+                allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+                allowed-headers: Authorization,Content-Type
+                max-age: 3600
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
+    gateway:
+      access: read-only           # GET /actuator/gateway/routes lists the live routes
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+info:
+  app:
+    description: Edge gateway routing /api/** to the microservices

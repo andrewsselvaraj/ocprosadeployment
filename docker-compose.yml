@@ -1,0 +1,82 @@
+# Full stack in containers on your machine (Docker Desktop or Podman):
+#   docker compose up --build         (or: podman compose up --build)
+#   .\scripts\verify-deployment.ps1 -BaseUrl http://localhost:8080
+#
+# Needs roughly 3 GB of free RAM. Without Docker, run the services with ./mvnw instead
+# (see docs/02-local-development.md); they then use in-memory H2 databases.
+
+x-service-env: &service-env
+  JWT_SECRET: compose-dev-secret-0123456789-abcdefghijklmnop
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root-dev-pw
+    volumes:
+      - ./deploy/db/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot-dev-pw"]
+      interval: 5s
+      retries: 30
+
+  identity-service:
+    build: { context: ., args: { SERVICE: identity-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:mysql://mysql:3306/identity_db?sslMode=DISABLED&allowPublicKeyRetrieval=true
+      DB_USERNAME: identity
+      DB_PASSWORD: identity-dev-pw
+    depends_on: { mysql: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  academic-service:
+    build: { context: ., args: { SERVICE: academic-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:mysql://mysql:3306/academic_db?sslMode=DISABLED&allowPublicKeyRetrieval=true
+      DB_USERNAME: academic
+      DB_PASSWORD: academic-dev-pw
+    depends_on: { mysql: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  question-service:
+    build: { context: ., args: { SERVICE: question-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:mysql://mysql:3306/question_db?sslMode=DISABLED&allowPublicKeyRetrieval=true
+      DB_USERNAME: question
+      DB_PASSWORD: question-dev-pw
+    depends_on: { mysql: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  exam-service:
+    build: { context: ., args: { SERVICE: exam-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:mysql://mysql:3306/exam_db?sslMode=DISABLED&allowPublicKeyRetrieval=true
+      DB_USERNAME: exam
+      DB_PASSWORD: exam-dev-pw
+      QUESTION_SERVICE_URL: http://question-service:8080
+    depends_on: { mysql: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  api-gateway:
+    build: { context: ., args: { SERVICE: api-gateway } }
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError
+      IDENTITY_SERVICE_URL: http://identity-service:8080
+      ACADEMIC_SERVICE_URL: http://academic-service:8080
+      QUESTION_SERVICE_URL: http://question-service:8080
+      EXAM_SERVICE_URL: http://exam-service:8080
+    ports:
+      - "8080:8080"
+    depends_on: [identity-service, academic-service, question-service, exam-service]
+    deploy: { resources: { limits: { memory: 384m } } }
+
+volumes:
+  mysql-data:

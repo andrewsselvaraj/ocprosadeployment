@@ -1,0 +1,212 @@
+# In-cluster image builds: no Docker needed on your laptop.
+#   oc apply -f deploy/openshift/builds.yaml -n m2its-dev
+#   oc start-build identity-service --from-repo=. --follow -n m2its-dev
+# "--from-repo=." uploads the last COMMITTED version of this git repo (untracked files such as
+# the legacy SQL dump are never sent). Use --from-dir=. to send uncommitted changes as well.
+# Each BuildConfig runs the root Dockerfile with SERVICE=<name> and pushes the result to the
+# ImageStream in the cluster's internal registry; the dev Deployments then roll out automatically.
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: identity-service
+  labels:
+    app.kubernetes.io/name: identity-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: identity-service
+  labels:
+    app.kubernetes.io/name: identity-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  source:
+    type: Binary                      # source is uploaded by "oc start-build --from-repo/--from-dir"
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      buildArgs:
+        - name: SERVICE
+          value: identity-service
+  output:
+    to:
+      kind: ImageStreamTag
+      name: identity-service:latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi                     # Maven + javac need headroom
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: academic-service
+  labels:
+    app.kubernetes.io/name: academic-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: academic-service
+  labels:
+    app.kubernetes.io/name: academic-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  source:
+    type: Binary                      # source is uploaded by "oc start-build --from-repo/--from-dir"
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      buildArgs:
+        - name: SERVICE
+          value: academic-service
+  output:
+    to:
+      kind: ImageStreamTag
+      name: academic-service:latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi                     # Maven + javac need headroom
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: question-service
+  labels:
+    app.kubernetes.io/name: question-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: question-service
+  labels:
+    app.kubernetes.io/name: question-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  source:
+    type: Binary                      # source is uploaded by "oc start-build --from-repo/--from-dir"
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      buildArgs:
+        - name: SERVICE
+          value: question-service
+  output:
+    to:
+      kind: ImageStreamTag
+      name: question-service:latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi                     # Maven + javac need headroom
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: exam-service
+  labels:
+    app.kubernetes.io/name: exam-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: exam-service
+  labels:
+    app.kubernetes.io/name: exam-service
+    app.kubernetes.io/part-of: m2its
+spec:
+  source:
+    type: Binary                      # source is uploaded by "oc start-build --from-repo/--from-dir"
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      buildArgs:
+        - name: SERVICE
+          value: exam-service
+  output:
+    to:
+      kind: ImageStreamTag
+      name: exam-service:latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi                     # Maven + javac need headroom
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: api-gateway
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: m2its
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: api-gateway
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: m2its
+spec:
+  source:
+    type: Binary                      # source is uploaded by "oc start-build --from-repo/--from-dir"
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      buildArgs:
+        - name: SERVICE
+          value: api-gateway
+  output:
+    to:
+      kind: ImageStreamTag
+      name: api-gateway:latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi                     # Maven + javac need headroom
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3

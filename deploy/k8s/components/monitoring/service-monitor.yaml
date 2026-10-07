@@ -1,0 +1,18 @@
+# Tells OpenShift's user-workload Prometheus to scrape /actuator/prometheus of every M2ITS
+# service. View the metrics in the OpenShift console: Observe -> Metrics, e.g.
+#   rate(http_server_requests_seconds_count{namespace="m2its-dev"}[5m])
+#   m2its_exams_submitted_total
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: m2its-services
+  labels:
+    app.kubernetes.io/part-of: m2its
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: m2its
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 30s

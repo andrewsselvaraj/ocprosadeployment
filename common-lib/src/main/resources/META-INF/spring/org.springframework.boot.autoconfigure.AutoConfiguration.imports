@@ -1,0 +1,2 @@
+com.m2its.common.security.JwtSecurityAutoConfiguration
+com.m2its.common.web.OpenApiAutoConfiguration

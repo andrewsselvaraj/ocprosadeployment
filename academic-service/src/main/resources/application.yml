@@ -1,0 +1,66 @@
+# Every value that differs per environment is an environment variable with a local default.
+# Local run: no variables needed (H2 in-memory + demo seed).
+# Kubernetes/OpenShift: values come from the ConfigMap and Secret in deploy/k8s.
+server:
+  port: ${SERVER_PORT:8082}
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: academic-service
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:academic_db;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      connection-timeout: 5000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # Flyway owns the schema; Hibernate only checks entities match it
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.default_batch_fetch_size: 50
+  flyway:
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration,classpath:db/seed}
+
+m2its:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:local-dev-only-secret-change-me-0123456789}
+      issuer: ${JWT_ISSUER:m2its-identity}
+      access-token-ttl: ${JWT_TTL:PT1H}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true             # /actuator/health/liveness and /actuator/health/readiness
+      group:
+        readiness:
+          include: readinessState,db
+  info:
+    env:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+info:
+  app:
+    description: Classes, subjects and chapters
+
+# Swagger UI at /swagger-ui.html; switched off in production (API_DOCS_ENABLED=false)
+springdoc:
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:true}
+  swagger-ui:
+    enabled: ${API_DOCS_ENABLED:true}

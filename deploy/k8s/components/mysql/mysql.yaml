@@ -1,0 +1,130 @@
+# In-cluster MySQL for the DEV environment only (production uses Amazon RDS).
+# Red Hat's MySQL image runs with OpenShift's random UID, so no extra SCC is needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: m2its
+spec:
+  selector:
+    app.kubernetes.io/name: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: m2its
+    app.kubernetes.io/component: database
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mysql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/part-of: m2its
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: mysql
+          image: registry.redhat.io/rhel9/mysql-84:latest
+          ports:
+            - name: mysql
+              containerPort: 3306
+          env:
+            # The image creates this first database/user itself ...
+            - name: MYSQL_DATABASE
+              value: identity_db
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef: { name: identity-db, key: DB_USERNAME }
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: identity-db, key: DB_PASSWORD }
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: mysql-admin, key: MYSQL_ROOT_PASSWORD }
+            # ... and init-databases.sh creates the other three from these
+            - name: ACADEMIC_DB_USER
+              valueFrom:
+                secretKeyRef: { name: academic-db, key: DB_USERNAME }
+            - name: ACADEMIC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: academic-db, key: DB_PASSWORD }
+            - name: QUESTION_DB_USER
+              valueFrom:
+                secretKeyRef: { name: question-db, key: DB_USERNAME }
+            - name: QUESTION_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: question-db, key: DB_PASSWORD }
+            - name: EXAM_DB_USER
+              valueFrom:
+                secretKeyRef: { name: exam-db, key: DB_USERNAME }
+            - name: EXAM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: exam-db, key: DB_PASSWORD }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql/data
+            - name: init
+              mountPath: /opt/app-root/src/mysql-init   # *.sh here run once, on first start
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          readinessProbe:
+            tcpSocket: { port: mysql }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: mysql }
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: init
+          configMap:
+            name: mysql-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi          # uses the cluster's default StorageClass (gp3-csi on ROSA)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apps-to-mysql
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mysql
+  ingress:
+    - from:
+        - podSelector:            # only the four domain services, not the gateway
+            matchLabels:
+              app.kubernetes.io/component: backend
+      ports:
+        - port: 3306
